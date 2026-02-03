@@ -4,111 +4,116 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
 import random
+import re # Telefon kontrolü için Regex kütüphanesi
 
 # ==========================================
 # 1. DİL AYARLARI (TRANSLATION DICTIONARY)
 # ==========================================
 TEXTS = {
     "TR": {
-        "sidebar_title": "LogiMatch v2.4",
+        "sidebar_title": "LogiMatch v2.5",
         "menu_label": "Menü",
-        "menu_options": ["🚛 Nakliyeci (Kamyonum Var)", "📦 Yük Sahibi (Yüküm Var)", "📊 Canlı Pazar & Harita"],
-        "system_status": "Sistem: 🟢 Aktif\n\nVeri: ✅ Yük Tanımlı (v3)",
-        "btn_demo": "🎲 Sisteme Test Verisi Yükle (Demo)",
-        "demo_success": "✅ Gerçekçi yük tanımları ve araçlar sisteme eklendi!",
+        "menu_options": ["🚛 Nakliyeci (Kamyonum Var)", "📦 Yük Sahibi (Yüküm Var)", "📊 Canlı Pazar & Puanlama"],
+        "system_status": "Sistem: 🟢 Aktif\n\nKontroller: ✅ Tel & Rota",
+        "btn_demo": "🎲 Test Verisi Yükle (Demo)",
+        "demo_success": "✅ Sisteme yeni kamyonlar ve yükler eklendi.",
         
-        # Nasıl Çalışır
-        "how_title": "❓ Nasıl Çalışır?",
-        "how_trans": "Rotanızı seçin, o yöne giden 'Paletli Yük', 'Ev Eşyası' veya 'Sebze' yüklerini bulun.",
-        "how_ship": "Yükünüzün ne olduğunu (Örn: 10 Palet Karpuz) yazın, uygun aracı hemen bulun.",
-        "how_market": "Kırmızı noktalar boş kamyonları gösterir. Listede yüklerin detaylarını görebilirsiniz.",
+        # Validasyon Mesajları
+        "err_phone": "⚠️ Geçersiz Telefon Numarası! (En az 10 haneli olmalı, örn: 5321234567)",
+        "err_same_city": "⚠️ Hata: Çıkış ve Varış şehri aynı olamaz!",
+        "warn_fill_all": "⚠️ Lütfen tüm alanları doldurunuz.",
 
-        # Nakliyeci Sayfası
+        # Nakliyeci
         "trans_title": "🚛 Nakliyeci Paneli",
-        "trans_subtitle": "Boş dönme! Aracına uygun yükü bul.",
+        "trans_subtitle": "İlan ver, puanın 'Yeni' olarak başlasın. İş yaptıkça yıldızın artacak.",
         "header_post": "📝 İlan Ver",
         "lbl_name": "Ad Soyad / Firma",
-        "lbl_phone": "Telefon Numarası",
+        "lbl_phone": "Telefon (Başında 0 olmadan)",
         "lbl_vehicle": "Araç Tipi",
         "lbl_origin": "Nereden (Çıkış)",
         "lbl_dest": "Nereye (Varış)",
         "lbl_date": "Müsaitlik Tarihi",
-        "btn_submit_truck": "İlanı Yayınla & Yük Ara",
-        "vehicles": ["Tır (Tenteli)", "Kamyon (Açık)", "Kamyon (Kapalı)", "Kamyonet", "Panelvan", "Frigo (Soğutuculu)"],
-        "warn_name": "⚠️ Lütfen isminizi girin.",
-        "success_post": "✅ İlan Başarıyla Yayınlandı! Puanınız: 5.0 ⭐",
+        "btn_submit_truck": "İlanı Yayınla",
+        "vehicles": ["Tır (Tenteli)", "Kamyon (Açık)", "Kamyon (Kapalı)", "Kamyonet", "Panelvan", "Frigo"],
+        "success_post": "✅ İlan Yayında! Başlangıç Puanı: 🆕 Yeni",
         "header_search": "🔍 Senin İçin Bulunan Yükler",
         "info_no_load": "Şu an bu rotada yük ilanı yok.",
         
-        # Yük Sahibi Sayfası
+        # Yük Sahibi
         "ship_title": "📦 Yük Sahibi Paneli",
-        "ship_subtitle": "Yükünü tanımla, taşıyıcılar seni bulsun.",
+        "ship_subtitle": "Yükünü taşıt, iş bitiminde sürücüyü puanla.",
         "header_cargo": "📝 Yük Bildir",
         "lbl_company": "Firma Adı",
-        "lbl_desc": "Yük Cinsi ve Miktarı",
-        "ph_desc": "Örn: 20 Palet Domates, 3+1 Ev Eşyası, Demir Boru...",
-        "btn_submit_cargo": "Yükü Yayınla & Araç Ara",
-        "warn_company": "⚠️ Firma adı ve yük tanımı zorunludur.",
+        "lbl_desc": "Yük Tanımı",
+        "ph_desc": "Örn: 10 Palet Seramik",
+        "btn_submit_cargo": "Yükü Yayınla",
         "success_cargo": "✅ Yük İlanı Oluşturuldu!",
         "header_truck_search": "🔍 Uygun Araçlar",
-        "info_no_truck": "Bu rotada şu an müsait araç yok.",
+        "info_no_truck": "Bu rotada araç yok.",
         
-        # Harita Sayfası
-        "map_title": "📊 Lojistik Pazarı",
-        "header_map": "📍 Müsait Araçlar",
-        "header_list_truck": "📋 Son Araç İlanları",
-        "header_list_load": "📦 Son Yük İlanları",
+        # Pazar & Puanlama
+        "map_title": "📊 Lojistik Pazarı & Puanlama Merkezi",
+        "header_rate": "⭐ Sürücü Puanla (Simülasyon)",
+        "lbl_select_driver": "Puanlanacak Sürücüyü Seçin:",
+        "lbl_give_score": "Puan Ver (1-5):",
+        "btn_rate": "İşi Tamamla ve Puanla",
+        "success_rate": "✅ Sürücüye puan verildi! Ortalaması güncellendi.",
+        "header_map": "📍 Müsait Araçlar Haritası",
+        "header_list_truck": "📋 Araç Listesi (Puanlı)",
+        "header_list_load": "📦 Yük Listesi",
         "warn_no_data": "Veri yok. Demo verisi yükleyebilirsiniz.",
         "info_empty": "Henüz ilan yok."
     },
     
     "EN": {
-        "sidebar_title": "LogiMatch v2.4",
+        "sidebar_title": "LogiMatch v2.5",
         "menu_label": "Menu",
-        "menu_options": ["🚛 Transporter (I have a Truck)", "📦 Shipper (I have Cargo)", "📊 Live Market & Map"],
-        "system_status": "System: 🟢 Online\n\nData: ✅ Cargo Description (v3)",
-        "btn_demo": "🎲 Load Test Data (Demo Mode)",
-        "demo_success": "✅ Realistic cargo & trucks injected!",
+        "menu_options": ["🚛 Transporter", "📦 Shipper", "📊 Market & Rating"],
+        "system_status": "System: 🟢 Online\n\nChecks: ✅ Phone & Route",
+        "btn_demo": "🎲 Load Test Data",
+        "demo_success": "✅ Data injected.",
 
-        "how_title": "❓ How does it work?",
-        "how_trans": "Select route, find cargoes like 'Palletized Goods', 'Furniture' or 'Fresh Food'.",
-        "how_ship": "Describe your cargo (e.g., 10 Pallets of Watermelon), find the right truck.",
-        "how_market": "Red dots are empty trucks. Check the lists for cargo details.",
+        "err_phone": "⚠️ Invalid Phone! (Must be at least 10 digits)",
+        "err_same_city": "⚠️ Error: Origin and Destination cannot be the same!",
+        "warn_fill_all": "⚠️ Please fill all fields.",
         
         "trans_title": "🚛 Transporter Hub",
-        "trans_subtitle": "Don't return empty! Find cargo fits your truck.",
+        "trans_subtitle": "Post your truck. You start as 'New'. Earn stars by completing jobs.",
         "header_post": "📝 Post Truck",
         "lbl_name": "Name / Company",
-        "lbl_phone": "Phone Number",
+        "lbl_phone": "Phone (No leading 0)",
         "lbl_vehicle": "Vehicle Type",
         "lbl_origin": "Origin City",
         "lbl_dest": "Destination City",
         "lbl_date": "Available Date",
-        "btn_submit_truck": "Post & Search Cargo",
+        "btn_submit_truck": "Post Truck",
         "vehicles": ["Semi-Trailer", "Truck (Open)", "Truck (Box)", "Van", "Minivan", "Refrigerated"],
-        "warn_name": "⚠️ Please enter your name.",
-        "success_post": "✅ Truck Posted Successfully! Score: 5.0 ⭐",
+        "success_post": "✅ Posted! Starting Score: 🆕 New",
         "header_search": "🔍 Cargo Matches",
-        "info_no_load": "No cargo found for this route yet.",
+        "info_no_load": "No cargo found.",
         
         "ship_title": "📦 Shipper Hub",
-        "ship_subtitle": "Describe cargo, find reliable trucks.",
+        "ship_subtitle": "Post cargo, rate drivers after delivery.",
         "header_cargo": "📝 Post Cargo",
         "lbl_company": "Company Name",
-        "lbl_desc": "Cargo Description & Quantity",
-        "ph_desc": "Ex: 20 Pallets Tomatoes, Household Goods, Steel Pipes...",
-        "btn_submit_cargo": "Post & Search Trucks",
-        "warn_company": "⚠️ Company name and description required.",
-        "success_cargo": "✅ Cargo Posted Successfully!",
+        "lbl_desc": "Cargo Description",
+        "ph_desc": "Ex: 10 Pallets Ceramics",
+        "btn_submit_cargo": "Post Cargo",
+        "success_cargo": "✅ Cargo Posted!",
         "header_truck_search": "🔍 Available Trucks",
-        "info_no_truck": "No trucks available for this route yet.",
+        "info_no_truck": "No trucks available.",
         
-        "map_title": "📊 Logistics Market",
-        "header_map": "📍 Live Truck Locations",
-        "header_list_truck": "📋 Latest Trucks",
-        "header_list_load": "📦 Latest Loads",
-        "warn_no_data": "No data. Try 'Load Test Data'.",
-        "info_empty": "No listings yet."
+        "map_title": "📊 Market & Rating Center",
+        "header_rate": "⭐ Rate a Driver (Simulation)",
+        "lbl_select_driver": "Select Driver to Rate:",
+        "lbl_give_score": "Give Score (1-5):",
+        "btn_rate": "Complete Job & Rate",
+        "success_rate": "✅ Driver rated! Score updated.",
+        "header_map": "📍 Live Map",
+        "header_list_truck": "📋 Truck List (Rated)",
+        "header_list_load": "📦 Load List",
+        "warn_no_data": "No data.",
+        "info_empty": "No listings."
     }
 }
 
@@ -187,6 +192,7 @@ def get_db_engine():
         st.stop()
 
 def init_db(engine):
+    # Puanlama varsayılan olarak 0 (Yeni) başlayacak
     create_transporters = """
     CREATE TABLE IF NOT EXISTS transporters_v3 (
         id SERIAL PRIMARY KEY,
@@ -196,12 +202,11 @@ def init_db(engine):
         origin_city TEXT NOT NULL,
         destination_city TEXT NOT NULL,
         date_available DATE,
-        reputation_score INT DEFAULT 5,
+        reputation_score INT DEFAULT 0, 
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
     """
     
-    # YENİ TABLO (Cargo weight YERİNE Cargo description)
     create_shippers = """
     CREATE TABLE IF NOT EXISTS shippers_v3 (
         id SERIAL PRIMARY KEY,
@@ -229,6 +234,15 @@ init_db(engine)
 # 4. YARDIMCI FONKSİYONLAR
 # ==========================================
 
+# TELEFON DOĞRULAMA (VALIDATION)
+def is_valid_phone(phone_str):
+    """
+    Sadece rakamları ayıklar. Uzunluk en az 10 ise True döner.
+    """
+    if not phone_str: return False
+    clean_num = re.sub(r'\D', '', phone_str) # Rakam dışındakileri sil
+    return len(clean_num) >= 10
+
 def save_to_db(table_name, data_dict):
     try:
         df = pd.DataFrame([data_dict])
@@ -236,6 +250,18 @@ def save_to_db(table_name, data_dict):
         return True
     except Exception as e:
         st.error(f"Save Error: {e}")
+        return False
+
+def update_driver_score(driver_id, new_score):
+    """Sürücü puanını günceller"""
+    try:
+        with engine.connect() as conn:
+            stmt = text("UPDATE transporters_v3 SET reputation_score = :score WHERE id = :id")
+            conn.execute(stmt, {"score": new_score, "id": driver_id})
+            conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"Update Error: {e}")
         return False
 
 def find_matches(target_table, origin, destination):
@@ -254,49 +280,40 @@ def find_matches(target_table, origin, destination):
         return pd.DataFrame()
 
 def generate_demo_data():
-    """Rastgele Demo Verisi Oluşturur - GERÇEKÇİ YÜKLERLE"""
     fake_names = ["Yılmaz Lojistik", "Demir Nakliyat", "Ahmet Usta", "Kuzey Kargo", "Ege Taşımacılık"]
-    fake_companies = ["Hal Komisyoncusu", "Tekstil Fabrikası", "İnşaat Ltd.", "Mobilya Dünyası", "Tarım Koop."]
+    fake_companies = ["Hal Komisyoncusu", "Tekstil Fabrikası", "İnşaat Ltd.", "Mobilya Dünyası"]
+    fake_loads = ["20 Palet Domates", "Ev Eşyası 3+1", "15 Ton İnşaat Demiri", "Tekstil Kolisi"]
     
-    # Gerçekçi Yük Tanımları
-    fake_loads = [
-        "20 Palet Domates (Frigo Lazım)",
-        "Ev Eşyası 3+1 (Asansörlü)",
-        "15 Ton İnşaat Demiri (6 Metre)",
-        "Tekstil Kolisi (500 Adet)",
-        "Narenciye - Limon (Soğuk Zincir)",
-        "Hırdavat Malzemesi (Paletli)",
-        "Makine Parçası (Ağır Yük)",
-        "Züccaciye (Kırılacak Eşya)"
-    ]
-    
-    # 5 Kamyon Ekle
-    for _ in range(5):
+    for _ in range(3):
         origin = random.choice(CITY_LIST)
-        dest = random.choice(CITY_LIST)
+        dest = random.choice([c for c in CITY_LIST if c != origin]) # Aynı şehir olmasın
         save_to_db("transporters_v3", {
             "contact_name": random.choice(fake_names),
-            "phone": f"05{random.randint(30,59)} 123 45 {random.randint(10,99)}",
-            "vehicle_type": random.choice(["Frigo (Soğutuculu)", "Tır (Tenteli)", "Kamyon (Açık)"]),
+            "phone": "05321234567",
+            "vehicle_type": "Tır (Tenteli)",
             "origin_city": origin,
             "destination_city": dest,
             "date_available": datetime.today().date(),
-            "reputation_score": random.randint(4, 5)
+            "reputation_score": random.randint(3, 5) # Demo verisi puanlı gelsin
         })
 
-    # 5 Yük Ekle (Sayı değil Tanım ile)
-    for _ in range(5):
+    for _ in range(3):
         origin = random.choice(CITY_LIST)
-        dest = random.choice(CITY_LIST)
+        dest = random.choice([c for c in CITY_LIST if c != origin])
         save_to_db("shippers_v3", {
             "company_name": random.choice(fake_companies),
-            "phone": f"0212 222 33 {random.randint(10,99)}",
+            "phone": "02122223344",
             "cargo_description": random.choice(fake_loads),
             "origin_city": origin,
             "destination_city": dest,
             "date_required": datetime.today().date()
         })
     return True
+
+def get_star_display(score):
+    if score == 0:
+        return "🆕 Yeni"
+    return "⭐" * int(score)
 
 # ==========================================
 # 5. SAYFA YAPISI VE DİL SEÇİMİ
@@ -313,10 +330,9 @@ page_index = st.sidebar.radio(
     format_func=lambda x: T["menu_options"][x]
 )
 
-# DEMO BUTONU
 st.sidebar.markdown("---")
 if st.sidebar.button(T["btn_demo"]):
-    with st.spinner("Generating Data..."):
+    with st.spinner("Generating..."):
         if generate_demo_data():
             st.sidebar.success(T["demo_success"])
             st.rerun()
@@ -328,10 +344,6 @@ st.sidebar.success(T["system_status"])
 # ==========================================
 if page_index == 0:
     st.title(T["trans_title"])
-    
-    with st.expander(T["how_title"]):
-        st.markdown(T["how_trans"])
-        
     st.markdown(T["trans_subtitle"])
     
     col1, col2 = st.columns([1, 2])
@@ -350,9 +362,15 @@ if page_index == 0:
             
     with col2:
         if submit_truck:
-            if not name:
-                st.warning(T["warn_name"])
+            # 1. VALIDASYON KONTROLLERİ
+            if not name or not phone:
+                st.warning(T["warn_fill_all"])
+            elif not is_valid_phone(phone):
+                st.error(T["err_phone"])
+            elif origin == dest:
+                st.error(T["err_same_city"])
             else:
+                # Veri Kayıt
                 data = {
                     "contact_name": name,
                     "phone": phone,
@@ -360,7 +378,7 @@ if page_index == 0:
                     "origin_city": origin,
                     "destination_city": dest,
                     "date_available": date_avail,
-                    "reputation_score": 5
+                    "reputation_score": 0 # BAŞLANGIÇ PUANI SIFIR (YENİ)
                 }
                 
                 if save_to_db("transporters_v3", data):
@@ -377,7 +395,7 @@ if page_index == 0:
                                 <div class="metric-card">
                                     <h4>🏢 {row['company_name']}</h4>
                                     <p><b>📦 {row['cargo_description']}</b></p>
-                                    <p>📅 Tarih: {row['date_required']} | 📞 <b>{row['phone']}</b></p>
+                                    <p>📅 Tarih: {row['date_required']} | 📞 {row['phone']}</p>
                                 </div>
                                 <br>
                                 """, unsafe_allow_html=True)
@@ -389,10 +407,6 @@ if page_index == 0:
 # ==========================================
 elif page_index == 1:
     st.title(T["ship_title"])
-    
-    with st.expander(T["how_title"]):
-        st.markdown(T["how_ship"])
-        
     st.markdown(T["ship_subtitle"])
     
     col1, col2 = st.columns([1, 2])
@@ -402,9 +416,7 @@ elif page_index == 1:
         with st.form("shipper_form"):
             company = st.text_input(T["lbl_company"])
             phone = st.text_input(T["lbl_phone"])
-            # BURASI DEĞİŞTİ: Sayı yerine Metin
             desc = st.text_input(T["lbl_desc"], placeholder=T["ph_desc"])
-            
             origin = st.selectbox(T["lbl_origin"], CITY_LIST)
             dest = st.selectbox(T["lbl_dest"], CITY_LIST)
             date_req = st.date_input(T["lbl_date"], min_value=datetime.today())
@@ -413,8 +425,13 @@ elif page_index == 1:
             
     with col2:
         if submit_cargo:
-            if not company or not desc:
-                st.warning(T["warn_company"])
+            # 1. VALIDASYON KONTROLLERİ
+            if not company or not desc or not phone:
+                st.warning(T["warn_fill_all"])
+            elif not is_valid_phone(phone):
+                st.error(T["err_phone"])
+            elif origin == dest:
+                st.error(T["err_same_city"])
             else:
                 data = {
                     "company_name": company,
@@ -434,13 +451,15 @@ elif page_index == 1:
                     
                     if not matches.empty:
                         for index, row in matches.iterrows():
-                            stars = "⭐" * int(row.get('reputation_score', 3))
+                            # Puan Gösterimi
+                            score_disp = get_star_display(row.get('reputation_score', 0))
+                            
                             with st.container():
                                 st.markdown(f"""
                                 <div class="metric-card">
-                                    <h4>🚛 {row['contact_name']} {stars}</h4>
+                                    <h4>🚛 {row['contact_name']} {score_disp}</h4>
                                     <p><b>Vehicle:</b> {row['vehicle_type']} | <b>Date:</b> {row['date_available']}</p>
-                                    <p>📞 <b>Tel:</b> {row['phone']}</p>
+                                    <p>📞 {row['phone']}</p>
                                 </div>
                                 <br>
                                 """, unsafe_allow_html=True)
@@ -448,19 +467,19 @@ elif page_index == 1:
                         st.info(T["info_no_truck"])
 
 # ==========================================
-# 8. SAYFA: CANLI PAZAR (MARKET)
+# 8. SAYFA: CANLI PAZAR & PUANLAMA
 # ==========================================
 elif page_index == 2:
     st.title(T["map_title"])
     
-    with st.expander(T["how_title"]):
-        st.markdown(T["how_market"])
-    
     try:
         with engine.connect() as conn:
-            trucks_df = pd.read_sql("SELECT * FROM transporters_v3 ORDER BY created_at DESC LIMIT 50", conn)
+            # ID'yi de çekiyoruz ki güncelleme yapabilelim
+            trucks_df = pd.read_sql("SELECT id, contact_name, origin_city, destination_city, vehicle_type, reputation_score FROM transporters_v3 ORDER BY created_at DESC", conn)
             loads_df = pd.read_sql("SELECT * FROM shippers_v3 ORDER BY created_at DESC LIMIT 50", conn)
             
+        # --- HARİTA ---
+        st.markdown(f"### {T['header_map']}")
         if not trucks_df.empty:
             map_data = []
             for _, row in trucks_df.iterrows():
@@ -468,33 +487,46 @@ elif page_index == 2:
                 if city in TR_CITIES:
                     map_data.append({
                         'lat': TR_CITIES[city][0],
-                        'lon': TR_CITIES[city][1],
-                        'type': 'Truck'
+                        'lon': TR_CITIES[city][1]
                     })
-            
-            map_df = pd.DataFrame(map_data)
-            
-            st.markdown(f"### {T['header_map']}")
-            if not map_df.empty:
-                st.map(map_df, zoom=5)
-            else:
-                st.warning(T["warn_no_data"])
-            
-            col_t, col_l = st.columns(2)
-            
-            with col_t:
-                st.markdown(f"### {T['header_list_truck']}")
-                st.dataframe(trucks_df[['contact_name', 'origin_city', 'destination_city', 'vehicle_type']], use_container_width=True, hide_index=True)
-            
-            with col_l:
-                st.markdown(f"### {T['header_list_load']}")
-                if not loads_df.empty:
-                    st.dataframe(loads_df[['company_name', 'origin_city', 'destination_city', 'cargo_description']], use_container_width=True, hide_index=True)
-                else:
-                    st.info("No loads yet.")
-            
+            if map_data:
+                st.map(pd.DataFrame(map_data), zoom=5)
         else:
-            st.info(T["info_empty"])
+            st.warning(T["warn_no_data"])
+
+        st.divider()
+
+        # --- PUANLAMA SİMÜLASYONU (YENİ ÖZELLİK) ---
+        col_rate, col_list = st.columns([1, 2])
+        
+        with col_rate:
+            st.markdown(f"### {T['header_rate']}")
+            st.info("Demo Modu: Buradan bir işi tamamlamış gibi yapıp sürücüye puan verebilirsiniz.")
             
+            if not trucks_df.empty:
+                # Sürücü Seçimi
+                driver_options = trucks_df.set_index('id')['contact_name'].to_dict()
+                selected_id = st.selectbox(T["lbl_select_driver"], options=list(driver_options.keys()), format_func=lambda x: driver_options[x])
+                
+                # Puan Verme
+                new_stars = st.slider(T["lbl_give_score"], 1, 5, 5)
+                
+                if st.button(T["btn_rate"]):
+                    if update_driver_score(selected_id, new_stars):
+                        st.success(T["success_rate"])
+                        st.rerun()
+            else:
+                st.write("Puanlanacak sürücü yok.")
+
+        with col_list:
+            st.markdown(f"### {T['header_list_truck']}")
+            if not trucks_df.empty:
+                # Puanları Yıldız Yapıp Gösterelim
+                display_df = trucks_df.copy()
+                display_df['reputation_score'] = display_df['reputation_score'].apply(get_star_display)
+                st.dataframe(display_df[['contact_name', 'origin_city', 'destination_city', 'reputation_score']], use_container_width=True, hide_index=True)
+            else:
+                st.info(T["info_empty"])
+
     except Exception as e:
         st.error(f"Data Error: {e}")
