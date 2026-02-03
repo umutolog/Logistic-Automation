@@ -11,10 +11,10 @@ import re
 # ==========================================
 TEXTS = {
     "TR": {
-        "sidebar_title": "LogiMatch v3.0 AI",
+        "sidebar_title": "LogiMatch v3.1 AI",
         "menu_label": "Menü",
         "menu_options": ["🚛 Nakliyeci (İlan Ver)", "📦 Yük Sahibi (Yük Ekle)", "🤖 AI Rota Planlayıcı", "📊 Canlı Pazar & Harita"],
-        "system_status": "Sistem: 🟢 Online\n\nAI Motoru: 🧠 Aktif",
+        "system_status": "Sistem: 🟢 Online\n\nVeritabanı: ✅ v4 (AI Uyumlu)",
         "btn_demo": "🎲 Test Verisi Yükle (AI Eğitimi)",
         "demo_success": "✅ AI için test verileri (Zincirleme Rotalar) yüklendi.",
         
@@ -41,10 +41,10 @@ TEXTS = {
     },
     
     "EN": {
-        "sidebar_title": "LogiMatch v3.0 AI",
+        "sidebar_title": "LogiMatch v3.1 AI",
         "menu_label": "Menu",
         "menu_options": ["🚛 Transporter", "📦 Shipper", "🤖 AI Route Planner", "📊 Market & Map"],
-        "system_status": "System: 🟢 Online\n\nAI Engine: 🧠 Active",
+        "system_status": "System: 🟢 Online\n\nDatabase: ✅ v4 (AI Ready)",
         "btn_demo": "🎲 Load Test Data",
         "demo_success": "✅ Data loaded for AI simulation.",
         
@@ -99,7 +99,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. VERİTABANI BAĞLANTISI (v3)
+# 3. VERİTABANI BAĞLANTISI (v4 - YENİ TABLOLAR)
 # ==========================================
 @st.cache_resource
 def get_db_engine():
@@ -112,9 +112,9 @@ def get_db_engine():
         st.stop()
 
 def init_db(engine):
-    # 'status' sütunu ekledik: 'Available' (Boş) veya 'Busy' (Dolu)
+    # TABLO İSİMLERİ v4 OLARAK GÜNCELLENDİ (SORUN ÇÖZÜMÜ)
     create_transporters = """
-    CREATE TABLE IF NOT EXISTS transporters_v3 (
+    CREATE TABLE IF NOT EXISTS transporters_v4 (
         id SERIAL PRIMARY KEY,
         contact_name TEXT NOT NULL,
         phone TEXT,
@@ -128,7 +128,7 @@ def init_db(engine):
     );
     """
     create_shippers = """
-    CREATE TABLE IF NOT EXISTS shippers_v3 (
+    CREATE TABLE IF NOT EXISTS shippers_v4 (
         id SERIAL PRIMARY KEY,
         company_name TEXT NOT NULL,
         phone TEXT,
@@ -179,7 +179,7 @@ def update_driver_location(driver_phone, new_city):
     try:
         with engine.connect() as conn:
             stmt = text("""
-                UPDATE transporters_v3 
+                UPDATE transporters_v4 
                 SET origin_city = :new_city, destination_city = '', status = 'Available', date_available = CURRENT_DATE
                 WHERE phone = :phone
             """)
@@ -192,20 +192,15 @@ def update_driver_location(driver_phone, new_city):
 
 def find_ai_routes(origin, dest):
     """
-    AI ZİNCİRLEME MANTIĞI:
-    Adım 1: A -> B yükünü bul.
-    Adım 2: B şehrinden kalkan (B -> C) yüklerini bul.
-    Adım 3: Bunları birleştirip "Verimli Rota" olarak sun.
+    AI ZİNCİRLEME MANTIĞI
     """
     try:
         with engine.connect() as conn:
-            # 1. Adım: Direkt Yük (A -> B)
-            query1 = text("SELECT * FROM shippers_v3 WHERE origin_city = :o AND destination_city = :d")
+            # v4 Tablolarını Kullanıyoruz
+            query1 = text("SELECT * FROM shippers_v4 WHERE origin_city = :o AND destination_city = :d")
             leg1 = pd.read_sql(query1, conn, params={"o": origin, "d": dest})
             
-            # 2. Adım: Zincirleme Yük (B -> Herhangi Bir Yer)
-            # Buradaki mantık: Eğer B şehrine gidiyorsan, oradan boş dönme!
-            query2 = text("SELECT * FROM shippers_v3 WHERE origin_city = :d")
+            query2 = text("SELECT * FROM shippers_v4 WHERE origin_city = :d")
             potential_leg2 = pd.read_sql(query2, conn, params={"d": dest})
             
         return leg1, potential_leg2
@@ -214,8 +209,7 @@ def find_ai_routes(origin, dest):
         return pd.DataFrame(), pd.DataFrame()
 
 def generate_demo_data():
-    # Zincirleme senaryo için özel veri
-    # Senaryo: İzmir -> Hatay -> İstanbul
+    # v4 Tablolarına Kayıt
     truck = {
         "contact_name": "AI Lojistik (Demo)", "phone": "05551112233", "vehicle_type": "Tır (Tenteli)",
         "origin_city": "IZMIR", "destination_city": "HATAY", "date_available": datetime.today().date(), "status": "Available"
@@ -229,9 +223,9 @@ def generate_demo_data():
         "origin_city": "HATAY", "destination_city": "ISTANBUL", "date_required": datetime.today().date()
     }
     
-    save_to_db("transporters_v3", truck)
-    save_to_db("shippers_v3", load1)
-    save_to_db("shippers_v3", load2)
+    save_to_db("transporters_v4", truck)
+    save_to_db("shippers_v4", load1)
+    save_to_db("shippers_v4", load2)
     return True
 
 # ==========================================
@@ -246,8 +240,9 @@ page_index = st.sidebar.radio(T["menu_label"], range(4), format_func=lambda x: T
 
 st.sidebar.markdown("---")
 if st.sidebar.button(T["btn_demo"]):
-    if generate_demo_data():
-        st.sidebar.success(T["demo_success"])
+    with st.spinner("Loading..."):
+        if generate_demo_data():
+            st.sidebar.success(T["demo_success"])
 
 st.sidebar.success(T["system_status"])
 
@@ -267,7 +262,7 @@ if page_index == 0:
             if not is_valid_phone(phone): st.error(T["err_phone"])
             elif origin == dest: st.error(T["err_same_city"])
             else:
-                save_to_db("transporters_v3", {
+                save_to_db("transporters_v4", {
                     "contact_name": name, "phone": phone, "vehicle_type": vehicle,
                     "origin_city": origin, "destination_city": dest, "date_available": date,
                     "status": "Available"
@@ -290,7 +285,7 @@ elif page_index == 1:
             if not is_valid_phone(phone): st.error(T["err_phone"])
             elif origin == dest: st.error(T["err_same_city"])
             else:
-                save_to_db("shippers_v3", {
+                save_to_db("shippers_v4", {
                     "company_name": comp, "phone": phone, "cargo_description": desc,
                     "origin_city": origin, "destination_city": dest, "date_required": date
                 })
@@ -314,7 +309,7 @@ elif page_index == 2:
         
         st.divider()
         
-        # 1. ADIM: DİREKT YÜKLER
+        # 1. ADIM
         st.subheader(f"1. {start_city} ➝ {target_city} ({T['res_direct']})")
         if not leg1.empty:
             for _, row in leg1.iterrows():
@@ -322,7 +317,7 @@ elif page_index == 2:
         else:
             st.warning("Bu rotada doğrudan yük yok.")
 
-        # 2. ADIM: ZİNCİRLEME (AI ÖNERİSİ)
+        # 2. ADIM
         st.subheader(f"2. {target_city} ➝ ? ({T['res_chain']})")
         
         if not leg1.empty and not leg2.empty:
@@ -351,9 +346,9 @@ elif page_index == 3:
     with st.expander("📍 Sürücü Durum Simülasyonu (Otomatik Takip)"):
         st.write("Senaryo: Sürücü yükü indirdi. Sistem onu yeni şehirde 'Boş' olarak işaretlemeli.")
         
-        # Sadece 'Busy' olan veya bir rotası olanları listele
         with engine.connect() as conn:
-            drivers = pd.read_sql("SELECT * FROM transporters_v3 WHERE destination_city != ''", conn)
+            # v4 tablosundan çek
+            drivers = pd.read_sql("SELECT * FROM transporters_v4 WHERE destination_city != ''", conn)
         
         if not drivers.empty:
             driver_dict = {f"{row['contact_name']} ({row['origin_city']}->{row['destination_city']})": (row['phone'], row['destination_city']) for _, row in drivers.iterrows()}
@@ -370,7 +365,7 @@ elif page_index == 3:
     # HARİTA
     try:
         with engine.connect() as conn:
-            trucks_df = pd.read_sql("SELECT * FROM transporters_v3 ORDER BY created_at DESC", conn)
+            trucks_df = pd.read_sql("SELECT * FROM transporters_v4 ORDER BY created_at DESC", conn)
         
         if not trucks_df.empty:
             map_data = []
