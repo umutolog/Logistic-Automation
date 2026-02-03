@@ -14,7 +14,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for a professional look
 st.markdown("""
     <style>
     .stButton>button {
@@ -32,19 +31,19 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. DATABASE MANAGEMENT (Supabase/PostgreSQL)
+# 2. DATABASE MANAGEMENT (HARDCODED FIX)
 # ==========================================
 
 @st.cache_resource
 def get_db_engine():
     """
-    Creates and caches the SQLAlchemy engine. 
-    It pulls credentials safely from st.secrets.
+    Creates the SQLAlchemy engine using the DIRECT LINK to bypass secrets issues.
     """
     try:
-        # Expecting st.secrets["postgres"]["url"] or similar in .streamlit/secrets.toml
-        # Format: postgresql://user:password@host:port/database
-        db_url = st.secrets["postgres_url"]
+        # BURASI KRİTİK NOKTA: Şifreyi ve Linki direkt buraya yazdık.
+        # Streamlit artık başka yere bakamaz.
+        db_url = "postgresql://postgres.yzjzgkwwkinmtprqhudn:KzVzeHNAnoEoAetH@aws-1-eu-central-1.pooler.supabase.com:6543/postgres"
+        
         engine = create_engine(db_url, pool_pre_ping=True)
         return engine
     except Exception as e:
@@ -52,9 +51,7 @@ def get_db_engine():
         st.stop()
 
 def init_db(engine):
-    """
-    Creates the necessary tables if they do not exist.
-    """
+    """Creates tables if they don't exist."""
     create_transporters = """
     CREATE TABLE IF NOT EXISTS transporters (
         id SERIAL PRIMARY KEY,
@@ -98,13 +95,10 @@ init_db(engine)
 # ==========================================
 
 def clean_input(text_input):
-    """Normalizes city names to Upper Case for accurate matching."""
     return text_input.strip().upper() if text_input else ""
 
 def save_to_db(table_name, data_dict):
-    """Generic function to insert data into a table."""
     try:
-        # Create a DataFrame for easy insertion
         df = pd.DataFrame([data_dict])
         df.to_sql(table_name, engine, if_exists='append', index=False)
         return True
@@ -113,7 +107,6 @@ def save_to_db(table_name, data_dict):
         return False
 
 def find_matches(target_table, origin, destination):
-    """Queries the opposite table for matching routes."""
     query = f"""
         SELECT * FROM {target_table} 
         WHERE origin_city = :origin 
@@ -122,7 +115,6 @@ def find_matches(target_table, origin, destination):
     """
     try:
         with engine.connect() as conn:
-            # Using text() for safe parameter binding
             result = pd.read_sql(text(query), conn, params={"origin": origin, "dest": destination})
         return result
     except Exception as e:
@@ -140,7 +132,7 @@ page = st.sidebar.radio(
     ["🚛 I am a Transporter", "📦 I am a Shipper", "📊 Live Market"]
 )
 st.sidebar.markdown("---")
-st.sidebar.info("System Status: 🟢 Online\n\nDatabase: Supabase (Postgres)")
+st.sidebar.info("System Status: 🟢 Online\n\nDatabase: Supabase (Direct Link)")
 
 # ==========================================
 # 5. PAGE LOGIC: TRANSPORTER
@@ -168,11 +160,9 @@ if page == "🚛 I am a Transporter":
             if not name or not origin or not dest:
                 st.warning("⚠️ Please fill in Name, Origin, and Destination.")
             else:
-                # 1. Clean Data
                 c_origin = clean_input(origin)
                 c_dest = clean_input(dest)
                 
-                # 2. Save to DB
                 data = {
                     "contact_name": name,
                     "phone": phone,
@@ -185,7 +175,6 @@ if page == "🚛 I am a Transporter":
                 if save_to_db("transporters", data):
                     st.success("✅ Truck Posted Successfully!")
                     
-                    # 3. Find Matches
                     st.divider()
                     st.subheader(f"🔍 Cargo Matches: {c_origin} ➝ {c_dest}")
                     matches = find_matches("shippers", c_origin, c_dest)
@@ -226,11 +215,9 @@ elif page == "📦 I am a Shipper":
             if not company or not origin or not dest:
                 st.warning("⚠️ Please fill in Company, Origin, and Destination.")
             else:
-                # 1. Clean Data
                 c_origin = clean_input(origin)
                 c_dest = clean_input(dest)
                 
-                # 2. Save to DB
                 data = {
                     "company_name": company,
                     "phone": phone,
@@ -243,7 +230,6 @@ elif page == "📦 I am a Shipper":
                 if save_to_db("shippers", data):
                     st.success("✅ Cargo Posted Successfully!")
                     
-                    # 3. Find Matches
                     st.divider()
                     st.subheader(f"🔍 Truck Matches: {c_origin} ➝ {c_dest}")
                     matches = find_matches("transporters", c_origin, c_dest)
@@ -274,11 +260,17 @@ elif page == "📊 Live Market":
         
         with t_col:
             st.markdown(f"### 🚛 Available Trucks ({len(trucks_df)})")
-            st.dataframe(trucks_df[['origin_city', 'destination_city', 'vehicle_type', 'date_available']], use_container_width=True, hide_index=True)
+            if not trucks_df.empty:
+                st.dataframe(trucks_df[['origin_city', 'destination_city', 'vehicle_type', 'date_available']], use_container_width=True, hide_index=True)
+            else:
+                st.info("No trucks listed yet.")
             
         with s_col:
             st.markdown(f"### 📦 Cargo Loads ({len(shippers_df)})")
-            st.dataframe(shippers_df[['origin_city', 'destination_city', 'cargo_weight', 'date_required']], use_container_width=True, hide_index=True)
+            if not shippers_df.empty:
+                st.dataframe(shippers_df[['origin_city', 'destination_city', 'cargo_weight', 'date_required']], use_container_width=True, hide_index=True)
+            else:
+                st.info("No cargo listed yet.")
             
     except Exception as e:
-        st.error("Could not load market data.")
+        st.error(f"Could not load market data: {e}")
