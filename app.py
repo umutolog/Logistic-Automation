@@ -11,10 +11,10 @@ import re
 # ==========================================
 TEXTS = {
     "TR": {
-        "sidebar_title": "LogiMatch v3.1 AI",
+        "sidebar_title": "LogiMatch v3.2 (Fix)",
         "menu_label": "Menü",
         "menu_options": ["🚛 Nakliyeci (İlan Ver)", "📦 Yük Sahibi (Yük Ekle)", "🤖 AI Rota Planlayıcı", "📊 Canlı Pazar & Harita"],
-        "system_status": "Sistem: 🟢 Online\n\nVeritabanı: ✅ v4 (AI Uyumlu)",
+        "system_status": "Sistem: 🟢 Online\n\nArayüz: ✅ Renkler Düzeltildi",
         "btn_demo": "🎲 Test Verisi Yükle (AI Eğitimi)",
         "demo_success": "✅ AI için test verileri (Zincirleme Rotalar) yüklendi.",
         
@@ -41,10 +41,10 @@ TEXTS = {
     },
     
     "EN": {
-        "sidebar_title": "LogiMatch v3.1 AI",
+        "sidebar_title": "LogiMatch v3.2 (Fix)",
         "menu_label": "Menu",
         "menu_options": ["🚛 Transporter", "📦 Shipper", "🤖 AI Route Planner", "📊 Market & Map"],
-        "system_status": "System: 🟢 Online\n\nDatabase: ✅ v4 (AI Ready)",
+        "system_status": "System: 🟢 Online\n\nUI: ✅ Colors Fixed",
         "btn_demo": "🎲 Load Test Data",
         "demo_success": "✅ Data loaded for AI simulation.",
         
@@ -70,7 +70,7 @@ TEXTS = {
 }
 
 # ==========================================
-# 2. AYARLAR & SABİTLER
+# 2. AYARLAR & SABİTLER & CSS DÜZELTMESİ
 # ==========================================
 st.set_page_config(
     page_title="LogiMatch AI",
@@ -90,16 +90,37 @@ TR_CITIES = {
 }
 CITY_LIST = sorted(list(TR_CITIES.keys()))
 
+# CSS DÜZELTMESİ: color: #000000 eklendi. (Yazıyı siyah olmaya zorluyoruz)
 st.markdown("""
     <style>
     .stButton>button { width: 100%; border-radius: 5px; }
-    .metric-card { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border-left: 5px solid #FF4B4B; margin-bottom: 10px; }
-    .ai-card { background-color: #e8f4f8; padding: 15px; border-radius: 10px; border-left: 5px solid #00a8ff; margin-bottom: 10px; }
+    
+    .metric-card { 
+        background-color: #f8f9fa; 
+        color: #000000; /* Yazı rengi Siyah */
+        padding: 15px; 
+        border-radius: 10px; 
+        border-left: 5px solid #FF4B4B; 
+        margin-bottom: 10px; 
+    }
+    
+    .ai-card { 
+        background-color: #e8f4f8; 
+        color: #000000; /* Yazı rengi Siyah (Görünürlük için) */
+        padding: 15px; 
+        border-radius: 10px; 
+        border-left: 5px solid #00a8ff; 
+        margin-bottom: 10px; 
+    }
+    
+    .ai-card h4, .metric-card h4 {
+        color: #000000 !important; /* Başlıklar kesin siyah */
+    }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. VERİTABANI BAĞLANTISI (v4 - YENİ TABLOLAR)
+# 3. VERİTABANI BAĞLANTISI (v4)
 # ==========================================
 @st.cache_resource
 def get_db_engine():
@@ -112,7 +133,6 @@ def get_db_engine():
         st.stop()
 
 def init_db(engine):
-    # TABLO İSİMLERİ v4 OLARAK GÜNCELLENDİ (SORUN ÇÖZÜMÜ)
     create_transporters = """
     CREATE TABLE IF NOT EXISTS transporters_v4 (
         id SERIAL PRIMARY KEY,
@@ -151,7 +171,7 @@ engine = get_db_engine()
 init_db(engine)
 
 # ==========================================
-# 4. YARDIMCI FONKSİYONLAR & AI MANTIĞI
+# 4. YARDIMCI FONKSİYONLAR
 # ==========================================
 
 def is_valid_phone(phone_str):
@@ -168,14 +188,7 @@ def save_to_db(table_name, data_dict):
         st.error(f"Save Error: {e}")
         return False
 
-# --- YENİ ÖZELLİK: SÜRÜCÜ KONUMU GÜNCELLEME (OTOMATİK TAKİP) ---
 def update_driver_location(driver_phone, new_city):
-    """
-    Sürücü yükü boşalttığında çağrılır. 
-    1. Konumunu 'new_city' yapar.
-    2. Durumunu 'Available' (Boş) yapar.
-    3. Varış yerini temizler (yeni iş bekliyor).
-    """
     try:
         with engine.connect() as conn:
             stmt = text("""
@@ -191,12 +204,8 @@ def update_driver_location(driver_phone, new_city):
         return False
 
 def find_ai_routes(origin, dest):
-    """
-    AI ZİNCİRLEME MANTIĞI
-    """
     try:
         with engine.connect() as conn:
-            # v4 Tablolarını Kullanıyoruz
             query1 = text("SELECT * FROM shippers_v4 WHERE origin_city = :o AND destination_city = :d")
             leg1 = pd.read_sql(query1, conn, params={"o": origin, "d": dest})
             
@@ -209,7 +218,6 @@ def find_ai_routes(origin, dest):
         return pd.DataFrame(), pd.DataFrame()
 
 def generate_demo_data():
-    # v4 Tablolarına Kayıt
     truck = {
         "contact_name": "AI Lojistik (Demo)", "phone": "05551112233", "vehicle_type": "Tır (Tenteli)",
         "origin_city": "IZMIR", "destination_city": "HATAY", "date_available": datetime.today().date(), "status": "Available"
@@ -292,7 +300,7 @@ elif page_index == 1:
                 st.success(T["success_post"])
 
 # ==========================================
-# SAYFA 3: AI ROTA PLANLAYICI (ÖNEMLİ!)
+# SAYFA 3: AI ROTA PLANLAYICI
 # ==========================================
 elif page_index == 2:
     st.title(T["ai_title"])
@@ -313,11 +321,17 @@ elif page_index == 2:
         st.subheader(f"1. {start_city} ➝ {target_city} ({T['res_direct']})")
         if not leg1.empty:
             for _, row in leg1.iterrows():
-                st.info(f"📦 {row['cargo_description']} | {row['company_name']} | 📞 {row['phone']}")
+                with st.container():
+                    st.markdown(f"""
+                    <div class="metric-card">
+                        <h4>📦 {row['cargo_description']}</h4>
+                        <p>{row['company_name']} | 📞 {row['phone']}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
         else:
             st.warning("Bu rotada doğrudan yük yok.")
 
-        # 2. ADIM
+        # 2. ADIM (FIRSAT KARTI - DÜZELTİLDİ)
         st.subheader(f"2. {target_city} ➝ ? ({T['res_chain']})")
         
         if not leg1.empty and not leg2.empty:
@@ -347,7 +361,6 @@ elif page_index == 3:
         st.write("Senaryo: Sürücü yükü indirdi. Sistem onu yeni şehirde 'Boş' olarak işaretlemeli.")
         
         with engine.connect() as conn:
-            # v4 tablosundan çek
             drivers = pd.read_sql("SELECT * FROM transporters_v4 WHERE destination_city != ''", conn)
         
         if not drivers.empty:
